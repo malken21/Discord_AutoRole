@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, Partials } = require("discord.js");
+const { Client, GatewayIntentBits, Partials, InteractionCollector} = require("discord.js");
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -10,32 +10,41 @@ const client = new Client({
 const Config = require("./Config.json");
 
 // 招待コードを記憶しておくためのオブジェクトを定義
-const allInvites = {}
+let allInvites = {}
 
-client.on('ready', () => {
+client.on('ready', async () => {
+    console.log(`login: (${client.user.tag})`);
     // ボット起動時に全サーバーの招待コードを読み込んで記録する
+    await Promise.all(client.guilds.cache.map(async guild => {
+        try {
+            const invites = await guild.invites.fetch();
+            await Promise.all(invites.map(invite => {
+                allInvites[invite.code] = { "uses": invite.uses };
+            }));
+        } catch (err) {
+            console.log(err);
+        }
+    }));
+    console.log(allInvites)
+});
 
-    client.guilds.cache.forEach(async guild => {
-        const invites = await guild.invites.fetch()
-        console.log(invites.map(invite => invite.url))
-        /*guild.fetchInvites().then(invites => {
-            allInvites[guild.id] = invites
-        }).catch(console.error);*/
-    })
-})
-
-client.on('guildMemberAdd', member => {
+client.on('guildMemberAdd', async member => {
     // メンバーが参加したサーバーの招待コードを全て取得する
-    member.guild.fetchInvites().then(invites => {
-        // 以前に取得したサーバーの招待コードを変数に入れて保持する
-        const oldInvites = allInvites[member.guild.id]
-        // 新たに取得した招待コードに置き換え
-        allInvites[member.guild.id] = invites
-        // 以前に取得した招待コードと新たに取得したので、使用回数が増えたものを探す
-        const invite = invites.find(i => oldInvites.get(i.code).uses < i.uses)
-        // ログに出す
-        console.log(`${member.user.tag} は ${invite.code} を使ってサーバーに参加しました`)
-    }).catch(console.error);
+    const invites = await member.guild.invites.fetch();
+
+    await Promise.all(invites.map(invite => {
+        const item = allInvites[invite.code];
+        if (item == undefined) {
+            allInvites[invite.code] = { "uses": invite.uses };
+            console.log(`${member.user.tag} は ${invite.code} を使ってサーバーに参加しました`);
+        } else {
+            if (item.uses != invite.uses) {
+                allInvites[invite.code] = { "uses": invite.uses };
+                console.log(`${member.user.tag} は ${invite.code} を使ってサーバーに参加しました`);
+            }
+        }
+    }));
+    console.log(allInvites);
 })
 
 client.login(Config.token);
